@@ -39,6 +39,15 @@ THE SOFTWARE.
 #ifndef ARDUBOY_TONES_H
 #define ARDUBOY_TONES_H
 
+#ifdef ESP8266
+// speaker pin, maybe i should use the one defined in arduboy core
+#define TONES_PIN D3
+
+//#define TONES_SERIAL_DEBUG
+
+#endif
+
+
 #include <Arduino.h>
 
 // ************************************************************

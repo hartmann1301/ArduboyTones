@@ -36,6 +36,11 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 *****************************************************************************/
 
+#ifdef ESP8266
+// this library is needed to get easy access to the esp82666 timer functions 
+#include <Ticker.h>
+#endif
+
 #include "ArduboyTones.h"
 
 // pointer to a function that indicates if sound is enabled
@@ -44,35 +49,47 @@ static bool (*outputEnabled)();
 static volatile long durationToggleCount = 0;
 static volatile bool tonesPlaying = false;
 static volatile bool toneSilent;
-#ifdef TONES_VOLUME_CONTROL
-static volatile bool toneHighVol;
-static volatile bool forceHighVol = false;
-static volatile bool forceNormVol = false;
-#endif
 
-static volatile uint16_t *tonesStart;
-static volatile uint16_t *tonesIndex;
+#ifdef ESP8266
+uint16_t *tonesStart;	
+uint16_t *tonesIndex;	
+uint16_t toneSequence[MAX_TONES * 2 + 1];
+#else 
+static volatile uint16_t *tonesStart;	
+static volatile uint16_t *tonesIndex;	
 static volatile uint16_t toneSequence[MAX_TONES * 2 + 1];
+#endif 
+
 static volatile bool inProgmem;
 
+void updateTones();
 
-ArduboyTones::ArduboyTones(boolean (*outEn)())
+Ticker tonesTicker;
+
+ArduboyTones::ArduboyTones(bool (*outEn)())
 {
   outputEnabled = outEn;
 
   toneSequence[MAX_TONES * 2] = TONES_END;
 
+#ifdef ESP8266
+	// sets the update call interval
+  //tonesTicker.attach_ms(1000, updateTones);
+
+#else
   bitClear(TONE_PIN_PORT, TONE_PIN); // set the pin low
   bitSet(TONE_PIN_DDR, TONE_PIN); // set the pin to output mode
-#ifdef TONES_2_SPEAKER_PINS
-  bitClear(TONE_PIN2_PORT, TONE_PIN2); // set pin 2 low
-  bitSet(TONE_PIN2_DDR, TONE_PIN2); // set pin 2 to output mode
 #endif
 }
 
 void ArduboyTones::tone(uint16_t freq, uint16_t dur)
 {
-  bitWrite(TIMSK3, OCIE3A, 0); // disable the output compare match interrupt
+#ifdef ESP8266
+
+#else
+  bitWrite(TIMSK3, OCIE3A, 0); // disable the output compare match interrupt	
+#endif
+
   inProgmem = false;
   tonesStart = tonesIndex = toneSequence; // set to start of sequence array
   toneSequence[0] = freq;
@@ -84,7 +101,12 @@ void ArduboyTones::tone(uint16_t freq, uint16_t dur)
 void ArduboyTones::tone(uint16_t freq1, uint16_t dur1,
                         uint16_t freq2, uint16_t dur2)
 {
-  bitWrite(TIMSK3, OCIE3A, 0); // disable the output compare match interrupt
+#ifdef ESP8266
+
+#else
+  bitWrite(TIMSK3, OCIE3A, 0); // disable the output compare match interrupt	
+#endif
+
   inProgmem = false;
   tonesStart = tonesIndex = toneSequence; // set to start of sequence array
   toneSequence[0] = freq1;
@@ -99,7 +121,12 @@ void ArduboyTones::tone(uint16_t freq1, uint16_t dur1,
                         uint16_t freq2, uint16_t dur2,
                         uint16_t freq3, uint16_t dur3)
 {
-  bitWrite(TIMSK3, OCIE3A, 0); // disable the output compare match interrupt
+#ifdef ESP8266
+
+#else
+  bitWrite(TIMSK3, OCIE3A, 0); // disable the output compare match interrupt	
+#endif
+
   inProgmem = false;
   tonesStart = tonesIndex = toneSequence; // set to start of sequence array
   toneSequence[0] = freq1;
@@ -114,7 +141,12 @@ void ArduboyTones::tone(uint16_t freq1, uint16_t dur1,
 
 void ArduboyTones::tones(const uint16_t *tones)
 {
-  bitWrite(TIMSK3, OCIE3A, 0); // disable the output compare match interrupt
+#ifdef ESP8266
+
+#else	
+  bitWrite(TIMSK3, OCIE3A, 0); // disable the output compare match interrupt	
+#endif
+
   inProgmem = true;
   tonesStart = tonesIndex = (uint16_t *)tones; // set to start of sequence array
   nextTone(); // start playing
@@ -122,7 +154,12 @@ void ArduboyTones::tones(const uint16_t *tones)
 
 void ArduboyTones::tonesInRAM(uint16_t *tones)
 {
-  bitWrite(TIMSK3, OCIE3A, 0); // disable the output compare match interrupt
+#ifdef ESP8266
+
+#else	
+  bitWrite(TIMSK3, OCIE3A, 0); // disable the output compare match interrupt	
+#endif
+
   inProgmem = false;
   tonesStart = tonesIndex = tones; // set to start of sequence array
   nextTone(); // start playing
@@ -130,28 +167,19 @@ void ArduboyTones::tonesInRAM(uint16_t *tones)
 
 void ArduboyTones::noTone()
 {
+#ifdef ESP8266
+	::noTone(TONES_PIN);
+#else	
   bitWrite(TIMSK3, OCIE3A, 0); // disable the output compare match interrupt
   TCCR3B = 0; // stop the counter
-  bitClear(TONE_PIN_PORT, TONE_PIN); // set the pin low
-#ifdef TONES_VOLUME_CONTROL
-  bitClear(TONE_PIN2_PORT, TONE_PIN2); // set pin 2 low
-#endif
+  bitClear(TONE_PIN_PORT, TONE_PIN); // set the pin low	
+#endif		
+
   tonesPlaying = false;
 }
 
 void ArduboyTones::volumeMode(uint8_t mode)
 {
-#ifdef TONES_VOLUME_CONTROL
-  forceNormVol = false; // assume volume is tone controlled
-  forceHighVol = false;
-
-  if (mode == VOLUME_ALWAYS_NORMAL) {
-    forceNormVol = true;
-  }
-  else if (mode == VOLUME_ALWAYS_HIGH) {
-    forceHighVol = true;
-  }
-#endif
 }
 
 bool ArduboyTones::playing()
@@ -164,9 +192,8 @@ void ArduboyTones::nextTone()
   uint16_t freq;
   uint16_t dur;
   long toggleCount;
+#ifndef ESP8266
   uint32_t ocrValue;
-#ifdef TONES_ADJUST_PRESCALER
-  uint8_t tccrxbValue;
 #endif
 
   freq = getNext(); // get tone frequency
@@ -183,60 +210,59 @@ void ArduboyTones::nextTone()
     freq = getNext();
   }
 
-#ifdef TONES_VOLUME_CONTROL
-  if (((freq & TONE_HIGH_VOLUME) || forceHighVol) && !forceNormVol) {
-    toneHighVol = true;
-  }
-  else {
-    toneHighVol = false;
-  }
-#endif
-
   freq &= ~TONE_HIGH_VOLUME; // strip volume indicator from frequency
 
-#ifdef TONES_ADJUST_PRESCALER
-  if (freq >= MIN_NO_PRESCALE_FREQ) {
-    tccrxbValue = _BV(WGM32) | _BV(CS30); // CTC mode, no prescaling
-    ocrValue = F_CPU / freq / 2 - 1;
-    toneSilent = false;
-  }
-  else {
-    tccrxbValue = _BV(WGM32) | _BV(CS31); // CTC mode, prescaler /8
+	if (freq == 0) { // if tone is silent
+#ifdef ESP8266
+		noTone();
+#else		
+		ocrValue = F_CPU / 8 / SILENT_FREQ / 2 - 1; // dummy tone for silence
+		freq = SILENT_FREQ;
+		bitClear(TONE_PIN_PORT, TONE_PIN); // set the pin low		
+#endif		
+		toneSilent = true;
+	}
+	else {
+		
+#ifndef ESP8266	
+		ocrValue = F_CPU / 8 / freq / 2 - 1;
 #endif
-    if (freq == 0) { // if tone is silent
-      ocrValue = F_CPU / 8 / SILENT_FREQ / 2 - 1; // dummy tone for silence
-      freq = SILENT_FREQ;
-      toneSilent = true;
-      bitClear(TONE_PIN_PORT, TONE_PIN); // set the pin low
-    }
-    else {
-      ocrValue = F_CPU / 8 / freq / 2 - 1;
-      toneSilent = false;
-    }
-#ifdef TONES_ADJUST_PRESCALER
-  }
-#endif
+		toneSilent = false;
+	}
 
   if (!outputEnabled()) { // if sound has been muted
     toneSilent = true;
   }
 
-#ifdef TONES_VOLUME_CONTROL
-  if (toneHighVol && !toneSilent) {
-    // set pin 2 to the compliment of pin 1
-    if (bitRead(TONE_PIN_PORT, TONE_PIN)) {
-      bitClear(TONE_PIN2_PORT, TONE_PIN2);
-    }
-    else {
-      bitSet(TONE_PIN2_PORT, TONE_PIN2);
-    }
-  }
-  else {
-    bitClear(TONE_PIN2_PORT, TONE_PIN2); // set pin 2 low for normal volume
-  }
+#ifdef ESP8266
+
+#ifdef TONES_SERIAL_DEBUG
+	Serial.print(millis(), DEC);
+	Serial.print(" freq:");
+	Serial.println(freq, DEC);
+#endif 
+	
+	// play the actual tone with the std tone library if not muted
+	if (toneSilent) {
+		noTone();
+	} else {
+		::tone(TONES_PIN, freq);
+	}	
 #endif
 
   dur = getNext(); // get tone duration
+	
+#ifdef ESP8266	
+
+#ifdef TONES_SERIAL_DEBUG
+	Serial.print(" next Tone in:");
+	Serial.println(dur, DEC);
+#endif 
+
+	// set a timer to update the tone after its duration
+	tonesTicker.once_ms(dur, updateTones);
+
+#else	
   if (dur != 0) {
     // A right shift is used to divide by 512 for efficency.
     // For durations in milliseconds it should actually be a divide by 500,
@@ -248,14 +274,13 @@ void ArduboyTones::nextTone()
   }
 
   TCCR3A = 0;
-#ifdef TONES_ADJUST_PRESCALER
-  TCCR3B = tccrxbValue;
-#else
+
   TCCR3B = _BV(WGM32) | _BV(CS31); // CTC mode, prescaler /8
-#endif
+
   OCR3A = ocrValue;
   durationToggleCount = toggleCount;
   bitWrite(TIMSK3, OCIE3A, 1); // enable the output compare match interrupt
+#endif
 }
 
 uint16_t ArduboyTones::getNext()
@@ -266,16 +291,25 @@ uint16_t ArduboyTones::getNext()
   return *tonesIndex++;
 }
 
+#ifdef ESP8266
+void updateTones(){
+	//Serial.println("tik tok");
+	
+	// there is no need for toggling, this is the problem of tone()
+
+#ifdef TONES_SERIAL_DEBUG
+	Serial.print(millis(), DEC);
+	Serial.println(" nextTone()");
+#endif 
+
+	ArduboyTones::nextTone();
+}
+#else
 ISR(TIMER3_COMPA_vect)
 {
   if (durationToggleCount != 0) {
     if (!toneSilent) {
       *(&TONE_PIN_PORT) ^= TONE_PIN_MASK; // toggle the pin
-#ifdef TONES_VOLUME_CONTROL
-      if (toneHighVol) {
-        *(&TONE_PIN2_PORT) ^= TONE_PIN2_MASK; // toggle pin 2
-      }
-#endif
     }
     if (durationToggleCount > 0) {
       durationToggleCount--;
@@ -285,3 +319,4 @@ ISR(TIMER3_COMPA_vect)
     ArduboyTones::nextTone();
   }
 }
+#endif

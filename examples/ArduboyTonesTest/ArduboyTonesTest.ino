@@ -1,10 +1,22 @@
 // Sketch for testing the ArduboyTones library
-
 #include <Arduboy2.h>
 #include <ArduboyTones.h>
+#include <PS2X_lib.h>
+
+#define PS2_DAT       D6 // brown/green
+#define PS2_CMD       D0 // orange 
+#define PS2_SEL       D5 // yellow
+#define PS2_CLK       D8 // blue
+
+PS2X ps2x;
+SSD1306Brzo oled(OLED_I2C_ADRESS, D2, D1);
 
 Arduboy2 arduboy;
 ArduboyTones sound(arduboy.audio.enabled);
+
+void getButtons() {
+  arduboy.setExternalButtons(ps2x.getArduboyButtons());
+}
 
 #define BUTTON_DELAY 200
 
@@ -58,6 +70,19 @@ uint16_t inRAM[] = {
 };
 
 void setup() {
+  Serial.begin(57600);
+  Serial.println("TonesTest");
+
+  noTone(0);
+
+  if (ps2x.config_gamepad(PS2_CLK, PS2_CMD, PS2_SEL, PS2_DAT, false, false)) {
+    Serial.println("Something went wrong while Controller init");
+  } else {
+    Serial.println("Found Controller, configured successful");
+  }
+
+  arduboy.setExternalButtonsHandler(getButtons);
+  
   arduboy.begin();
 }
 
@@ -225,4 +250,3 @@ void displayAudio() {
   arduboy.print("\n\nUP:   enable\nDOWN: disable\nB: break");
   arduboy.invert(!arduboy.audio.enabled());
 }
-
