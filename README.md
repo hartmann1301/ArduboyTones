@@ -1,3 +1,9 @@
+# ArduboyTones fork for ESP8266 support
+
+Note1: different volume levels and more than one speaker is not implemented.
+
+Note2: instead of an ISR I am using the ticker lib to update audio
+
 # The ArduboyTones Library
 
 The ArduboyTones library is maintained in a git repository hosted on [GitHub](https://github.com/) at:
