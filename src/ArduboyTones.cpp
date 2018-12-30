@@ -39,6 +39,8 @@ THE SOFTWARE.
 #ifdef ESP8266
 // this library is needed to get easy access to the esp82666 timer functions 
 #include <Ticker.h>
+
+Ticker tonesTicker;
 #endif
 
 #include "ArduboyTones.h"
@@ -63,8 +65,6 @@ static volatile uint16_t toneSequence[MAX_TONES * 2 + 1];
 static volatile bool inProgmem;
 
 void updateTones();
-
-Ticker tonesTicker;
 
 ArduboyTones::ArduboyTones(bool (*outEn)())
 {
